@@ -25,7 +25,7 @@ The fork is public (a fork of a public repo cannot be private). Secrets stay hid
    - **Run tests**: runs unit tests first (adds a few minutes).
 3. Takes about 2 minutes. Open the finished run. The **Summary** shows the signing certificate SHA-256.
    It should be the SHA-256 you noted from your first build (record it privately). A different value means a different key and the phone will refuse to upgrade.
-4. Download the artifact `sms-backup-plus-<version>-<code>.apk` from the run (a zip containing the APK; needs GitHub login; kept 90 days).
+4. Download the artifact `sms-backup-plus-<version>-<code>.apk` from the run (uploaded unzipped, so the browser should save a plain `.apk`; needs GitHub login; kept 90 days. The `gh run download` command unpacks it into a folder because it assumes a zip. If a browser ever saves a `.zip`, extract it first, since renaming a zip to `.apk` does not work).
 5. Install: open the APK on the phone and allow "install unknown apps" for the browser or file manager. It installs over the existing app.
 6. A push to `master` (including **Sync fork**) also starts a build by itself.
 
