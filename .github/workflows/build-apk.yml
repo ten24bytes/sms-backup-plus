@@ -24,15 +24,15 @@ jobs:
     permissions:
       contents: write   # only used to create a release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # JDK 21 fails: -Werror turns the Java 8 target deprecation warning into an error.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Guard - PR #1121 fix present
         run: |
@@ -85,7 +85,7 @@ jobs:
             echo "Compare the SHA-256 with your installed app: same key means it upgrades in place."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.apk.outputs.file }}
           path: ${{ steps.apk.outputs.file }}
