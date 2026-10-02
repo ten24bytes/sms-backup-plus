@@ -87,8 +87,8 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.apk.outputs.file }}
           path: ${{ steps.apk.outputs.file }}
+          archive: false   # upload the .apk as-is (no .zip wrapper); artifact name = file name
           retention-days: 90
 
       - name: Publish release
