@@ -1,0 +1,106 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Also publish a GitHub Release with the APK (public link)"
+        type: boolean
+        default: false
+      run_tests:
+        description: "Run unit tests before building"
+        type: boolean
+        default: false
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # only used to create a release
+    steps:
+      - uses: actions/checkout@v4
+
+      # JDK 21 fails: -Werror turns the Java 8 target deprecation warning into an error.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Guard - PR #1121 fix present
+        run: |
+          if [ ! -f app/src/main/java/sms/backup/plus/service/LimitedCursor.java ]; then
+            echo "::error::LimitedCursor.java missing: the 'Invalid token LIMIT' (Skip) crash fix is not in this branch."
+            exit 1
+          fi
+
+      - name: Write signing config
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_PASSWORD; do
+            [ -n "${!v}" ] || { echo "::error::Secret $v is not set"; exit 1; }
+          done
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.keystore"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=smsbackup"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > keystore.properties
+
+      - name: Unit tests
+        if: ${{ inputs.run_tests }}
+        run: ./gradlew testDebugUnitTest --console=plain
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --console=plain
+
+      - name: Verify signature and name the APK
+        id: apk
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+          SRC=app/build/outputs/apk/release/app-release.apk
+          "$APKSIGNER" verify --print-certs "$SRC" | tee certs.txt
+          name=$("$AAPT" dump badging "$SRC" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
+          code=$("$AAPT" dump badging "$SRC" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" | head -1)
+          OUT="sms-backup-plus-${name}-${code}.apk"
+          cp "$SRC" "$OUT"
+          echo "file=$OUT" >> "$GITHUB_OUTPUT"
+          echo "version=${name}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Built \`$OUT\`"
+            echo "Commit: \`${GITHUB_SHA::8}\`"
+            echo '```'; grep -E "SHA-256" certs.txt; echo '```'
+            echo "Compare the SHA-256 with your installed app: same key means it upgrades in place."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.apk.outputs.file }}
+          path: ${{ steps.apk.outputs.file }}
+          retention-days: 90
+
+      - name: Publish release
+        if: ${{ inputs.publish_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.apk.outputs.version }}-${{ github.run_number }}" \
+            "${{ steps.apk.outputs.file }}" \
+            --title "${{ steps.apk.outputs.version }} (build ${{ github.run_number }})" \
+            --notes "Self-built from ${GITHUB_SHA::8}."
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f keystore.properties "$RUNNER_TEMP/release.keystore"
